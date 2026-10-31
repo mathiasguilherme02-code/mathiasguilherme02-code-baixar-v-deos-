@@ -18,6 +18,14 @@ const PORT = getPort();
 
 app.use(express.json());
 
+// Helper to prevent requests from hanging indefinitely
+function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg = 'Tempo limite ao processar link'): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms)),
+  ]);
+}
+
 // API: Analyze URL and extract actual media download links
 app.post('/api/analyze', async (req, res) => {
   const { url } = req.body;
@@ -26,7 +34,40 @@ app.post('/api/analyze', async (req, res) => {
     return res.status(400).json({ error: 'URL é obrigatória' });
   }
 
-  const cleanUrl = url.trim();
+  // 1. Sanitize input: extract first valid HTTP(S) URL if user pasted mobile share text with message
+  let rawUrl = String(url).trim();
+  const urlMatch = rawUrl.match(/https?:\/\/[^\s]+/i);
+  let cleanUrl = urlMatch ? urlMatch[0] : rawUrl;
+  cleanUrl = cleanUrl.replace(/[.,;!?)]+$/, '');
+
+  // 2. Resolve mobile shortlinks (e.g. vm.tiktok.com, vt.tiktok.com, youtu.be, tiktok.com/t/)
+  try {
+    if (
+      cleanUrl.includes('vm.tiktok.com') ||
+      cleanUrl.includes('vt.tiktok.com') ||
+      cleanUrl.includes('tiktok.com/t/') ||
+      cleanUrl.includes('youtu.be')
+    ) {
+      const redirectRes = await withTimeout(
+        fetch(cleanUrl, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
+          },
+        }),
+        6000
+      ).catch(() => null);
+
+      if (redirectRes && redirectRes.url && redirectRes.url !== cleanUrl) {
+        cleanUrl = redirectRes.url;
+      }
+    }
+  } catch (redirectErr) {
+    console.warn('Redirect resolve note:', redirectErr);
+  }
+
+  // 3. Identify Platform
   let platform = 'unknown';
   if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) platform = 'youtube';
   else if (cleanUrl.includes('instagram.com')) platform = 'instagram';
@@ -41,8 +82,9 @@ app.post('/api/analyze', async (req, res) => {
 
     // 1. TikTok
     if (platform === 'tiktok') {
+      // Primary: btch.ttdl with timeout
       try {
-        const tt = await btch.ttdl(cleanUrl);
+        const tt = await withTimeout(btch.ttdl(cleanUrl), 8000);
         if (tt && tt.video && tt.video.length > 0 && tt.video[0]) {
           return res.json({
             platform: 'tiktok',
@@ -57,9 +99,12 @@ app.post('/api/analyze', async (req, res) => {
         console.warn('btch.ttdl error, tentando fallback TikWM:', ttErr);
       }
 
-      // Fallback TikWM
+      // Fallback: TikWM API
       try {
-        const tikRes = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(cleanUrl)}`);
+        const tikRes = await withTimeout(
+          fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(cleanUrl)}`),
+          8000
+        );
         const tikJson = await tikRes.json();
         if (tikJson.code === 0 && tikJson.data) {
           const videoUrl = tikJson.data.play || tikJson.data.wmplay;
@@ -80,7 +125,7 @@ app.post('/api/analyze', async (req, res) => {
     // 2. YouTube
     if (platform === 'youtube') {
       try {
-        const yt = await btch.youtube(cleanUrl);
+        const yt = await withTimeout(btch.youtube(cleanUrl), 10000);
         if (yt && (yt.mp4 || yt.mp3)) {
           return res.json({
             platform: 'youtube',
@@ -99,7 +144,7 @@ app.post('/api/analyze', async (req, res) => {
     // 3. Instagram
     if (platform === 'instagram') {
       try {
-        const ig = await btch.igdl(cleanUrl);
+        const ig = await withTimeout(btch.igdl(cleanUrl), 10000);
         if (ig && Array.isArray(ig.result) && ig.result.length > 0) {
           const valid = ig.result.find((item: any) => item.url && item.url.trim().length > 0);
           if (valid) {
@@ -117,13 +162,13 @@ app.post('/api/analyze', async (req, res) => {
       }
     }
 
-    // Se a extração automatizada não retornar link direto da plataforma
+    // Se a extração automatizada não retornar link direto
     return res.status(422).json({
       error: 'Não foi possível extrair a mídia desse link diretamente. O perfil ou vídeo pode ser privado ou restrito.',
     });
   } catch (error: any) {
     console.error('Erro na análise da mídia:', error);
-    return res.status(500).json({ error: 'Erro interno ao processar link: ' + error.message });
+    return res.status(500).json({ error: 'Erro ao processar link: ' + error.message });
   }
 });
 
@@ -137,10 +182,14 @@ app.get('/api/download-file', async (req, res) => {
     return res.status(400).send('URL do arquivo não fornecida');
   }
 
+  // Mobile and CORS friendly headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Accept-Ranges', 'bytes');
+
   try {
     const upstreamRes = await fetch(fileUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
         'Referer': fileUrl,
       },
     });

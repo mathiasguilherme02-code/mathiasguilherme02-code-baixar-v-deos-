@@ -48,17 +48,25 @@ export default function App() {
       if (navigator.clipboard && navigator.clipboard.readText) {
         const text = await navigator.clipboard.readText();
         if (text) {
-          setUrl(text.trim());
+          const match = text.match(/https?:\/\/[^\s]+/i);
+          setUrl(match ? match[0] : text.trim());
         }
       }
     } catch {
-      // Browser clipboard permission may be blocked
+      // Browser clipboard permission may be blocked on mobile
     }
   };
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
+
+    let targetUrl = url.trim();
+    const match = targetUrl.match(/https?:\/\/[^\s]+/i);
+    if (match) {
+      targetUrl = match[0];
+      setUrl(targetUrl);
+    }
 
     setLoading(true);
     setError('');
@@ -69,7 +77,7 @@ export default function App() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() })
+        body: JSON.stringify({ url: targetUrl })
       });
       
       const data = await res.json();
@@ -112,15 +120,19 @@ export default function App() {
 
     const downloadEndpoint = `/api/download-file?url=${encodeURIComponent(mediaUrl)}&filename=${encodeURIComponent(filename)}`;
 
-    // Creates anchor and triggers immediate native file download to device storage
-    const link = document.createElement('a');
-    link.href = downloadEndpoint;
-    link.download = filename;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Mobile check: avoids pop-up blockers on iOS Safari and Android Chrome
+    const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (isMobile) {
+      window.location.assign(downloadEndpoint);
+    } else {
+      const link = document.createElement('a');
+      link.href = downloadEndpoint;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
 
     // Show success feedback
     setTimeout(() => {
@@ -134,7 +146,7 @@ export default function App() {
         setTimeout(() => {
           setDownloadSuccessToast(false);
         }, 4000);
-      }, 2000);
+      }, 2500);
     }, 1200);
   };
 
@@ -197,11 +209,15 @@ export default function App() {
               <LinkIcon className="h-5 w-5 text-[#94A3B8]" />
             </div>
             <input
-              type="url"
+              type="text"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck="false"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="Cole o link do vídeo aqui..."
-              className="w-full bg-transparent border-none text-white py-3 md:py-4 px-3 md:px-4 flex-1 text-[15px] md:text-[16px] outline-none placeholder:text-[#64748B]"
+              className="w-full bg-transparent border-none text-white py-3 md:py-4 px-3 md:px-4 flex-1 text-base outline-none placeholder:text-[#64748B]"
               required
             />
             {/* Clipboard Paste Shortcut */}
