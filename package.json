@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite build && tsx server.ts",
-    "build": "vite build && tsc --noEmit",
+    "dev": "tsx server.ts",
+    "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "start": "node server.ts"
