@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
     "start": "node server.ts"
   },
   "dependencies": {
