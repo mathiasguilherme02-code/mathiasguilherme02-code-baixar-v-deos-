@@ -248,16 +248,68 @@ export default function App() {
           </button>
         </form>
 
+        {/* Quick test examples */}
+        {!videoMeta && !loading && (
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-6 text-xs text-slate-400">
+            <span>Links públicos de teste:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setUrl('https://www.tiktok.com/@scout2015/video/6718335390845095173');
+                setError('');
+              }}
+              className="px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 text-teal-400 border border-slate-700/50 transition-colors"
+            >
+              Exemplo TikTok
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+                setError('');
+              }}
+              className="px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700/80 text-red-400 border border-slate-700/50 transition-colors"
+            >
+              Exemplo YouTube
+            </button>
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
           {error && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3"
+              className="mb-6 p-4 bg-red-500/10 border border-red-500/25 rounded-2xl flex items-start gap-3 shadow-lg"
             >
-              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-red-400 text-sm">{error}</p>
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-300 text-sm leading-relaxed">{error}</p>
+                <div className="mt-3 pt-2.5 border-t border-red-500/20 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                  <span className="text-slate-400">Teste com um vídeo público verificado:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUrl('https://www.tiktok.com/@scout2015/video/6718335390845095173');
+                      setError('');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 font-medium transition-colors"
+                  >
+                    Testar TikTok
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+                      setError('');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-red-300 font-medium transition-colors"
+                  >
+                    Testar YouTube
+                  </button>
+                </div>
+              </div>
             </motion.div>
           )}
 

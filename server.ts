@@ -80,30 +80,13 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const btch = await import('btch-downloader');
 
-    // 1. TikTok
+    // 1. TikTok (TikWM is fastest & most reliable)
     if (platform === 'tiktok') {
-      // Primary: btch.ttdl with timeout
-      try {
-        const tt = await withTimeout(btch.ttdl(cleanUrl), 8000);
-        if (tt && tt.video && tt.video.length > 0 && tt.video[0]) {
-          return res.json({
-            platform: 'tiktok',
-            title: tt.title || 'Vídeo do TikTok',
-            thumbnail: tt.thumbnail || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80',
-            duration: 'HD',
-            downloadUrl: tt.video[0],
-            audioUrl: tt.audio && tt.audio[0] ? tt.audio[0] : undefined,
-          });
-        }
-      } catch (ttErr) {
-        console.warn('btch.ttdl error, tentando fallback TikWM:', ttErr);
-      }
-
-      // Fallback: TikWM API
+      // Primary: TikWM API (direct MP4 unwatermarked in ~0.5s)
       try {
         const tikRes = await withTimeout(
           fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(cleanUrl)}`),
-          8000
+          6000
         );
         const tikJson = await tikRes.json();
         if (tikJson.code === 0 && tikJson.data) {
@@ -117,15 +100,42 @@ app.post('/api/analyze', async (req, res) => {
             audioUrl: tikJson.data.music,
           });
         }
-      } catch (fallbackErr) {
-        console.error('TikWM fallback error:', fallbackErr);
+      } catch (tikErr) {
+        console.warn('TikWM error, tentando fallback:', tikErr);
       }
+
+      // Secondary fallback: btch.ttdl
+      try {
+        const tt = await withTimeout(btch.ttdl(cleanUrl), 6000);
+        if (tt && tt.video && tt.video.length > 0 && tt.video[0]) {
+          return res.json({
+            platform: 'tiktok',
+            title: tt.title || 'Vídeo do TikTok',
+            thumbnail: tt.thumbnail || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80',
+            duration: 'HD',
+            downloadUrl: tt.video[0],
+            audioUrl: tt.audio && tt.audio[0] ? tt.audio[0] : undefined,
+          });
+        }
+      } catch (ttErr) {
+        console.warn('btch.ttdl fallback error:', ttErr);
+      }
+
+      return res.status(422).json({
+        error: 'Não foi possível baixar este vídeo do TikTok. Verifique se o link está correto, se o vídeo não foi excluído ou se o perfil é privado.',
+      });
     }
 
     // 2. YouTube
     if (platform === 'youtube') {
+      let ytTargetUrl = cleanUrl;
+      // Convert /shorts/ID to /watch?v=ID for better scraper compatibility
+      if (ytTargetUrl.includes('/shorts/')) {
+        ytTargetUrl = ytTargetUrl.replace('/shorts/', '/watch?v=');
+      }
+
       try {
-        const yt = await withTimeout(btch.youtube(cleanUrl), 10000);
+        const yt = await withTimeout(btch.youtube(ytTargetUrl), 9000);
         if (yt && (yt.mp4 || yt.mp3)) {
           return res.json({
             platform: 'youtube',
@@ -139,12 +149,16 @@ app.post('/api/analyze', async (req, res) => {
       } catch (ytErr) {
         console.warn('btch.youtube error:', ytErr);
       }
+
+      return res.status(422).json({
+        error: 'O YouTube bloqueou o download deste vídeo. Vídeos com restrição de idade, transmissões ao vivo ou faixas de áudio protegidas por gravadoras não podem ser baixados publicamente sem login.',
+      });
     }
 
     // 3. Instagram
     if (platform === 'instagram') {
       try {
-        const ig = await withTimeout(btch.igdl(cleanUrl), 10000);
+        const ig = await withTimeout(btch.igdl(cleanUrl), 8000);
         if (ig && Array.isArray(ig.result) && ig.result.length > 0) {
           const valid = ig.result.find((item: any) => item.url && item.url.trim().length > 0);
           if (valid) {
@@ -160,11 +174,14 @@ app.post('/api/analyze', async (req, res) => {
       } catch (igErr) {
         console.warn('btch.igdl error:', igErr);
       }
+
+      return res.status(422).json({
+        error: 'O Instagram bloqueou o acesso direto a este link. A Meta exige login oficial e bloqueia o download de contas privadas, stories ou reels com restrição de direitos autorais. Teste com vídeos do TikTok ou YouTube que funcionam com download direto.',
+      });
     }
 
-    // Se a extração automatizada não retornar link direto
     return res.status(422).json({
-      error: 'Não foi possível extrair a mídia desse link diretamente. O perfil ou vídeo pode ser privado ou restrito.',
+      error: 'Não foi possível extrair a mídia desse link diretamente.',
     });
   } catch (error: any) {
     console.error('Erro na análise da mídia:', error);
